@@ -34,12 +34,12 @@ get contract address and put in the follow(★★★★)
 
 `scripts/deploy_MahiroCoin_P.js`
 
-```jsx
+```js
 const hre = require("hardhat");
 
 async function main() {
 
-    const TrustedForwarderAddr = <forwarder contract address> // ★★★★
+    const TrustedForwarderAddr = (forwarder_contract_address); // ★★★★
 
     const factory = await hre.ethers.getContractFactory("MahiroCoinPermit");
     const contract = await factory.deploy(TrustedForwarderAddr);
