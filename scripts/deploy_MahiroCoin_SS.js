@@ -3,10 +3,10 @@ const hre = require("hardhat");
 
 async function main() {
 
-    const TrustedForwarderAddr = process.env.FORWARDER_CA;
+    const TrustedForwarderAddr = process.env.FORWARDER_CA
     console.log("trusted forwarder to:",TrustedForwarderAddr);
 
-    const factory = await hre.ethers.getContractFactory("MahiroCoinPermit");
+    const factory = await hre.ethers.getContractFactory("MahiroCoinSingleShot");
     const contract = await factory.deploy(TrustedForwarderAddr);
   
     await contract.waitForDeployment();

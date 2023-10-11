@@ -115,46 +115,19 @@ async function createRequestForPermit(req){
         index: 0,
         content: {
             types: {
-            EIP712Domain: [
-                {
-                name: "name",
-                type: "string"
-                },
-                {
-                name: "version",
-                type: "string"
-                },
-                {
-                name: "chainId",
-                type: "uint256"
-                },
-                {
-                name: "verifyingContract",
-                type: "address"
-                }
-            ],
-            Permit: [
-                {
-                name: "owner",
-                type: "address"
-                },
-                {
-                name: "spender",
-                type: "address"
-                },
-                {
-                name: "value",
-                type: "uint256"
-                },
-                {
-                name: "nonce",
-                type: "uint256"
-                },
-                {
-                name: "deadline",
-                type: "uint256"
-                }
-            ]
+                EIP712Domain: [
+                    {name: "name", type: "string"},
+                    {name: "version", type: "string"},
+                    {name: "chainId", type: "uint256"},
+                    {name: "verifyingContract", type: "address"}
+                ],
+                Permit: [
+                    {name: "owner", type: "address"},
+                    {name: "spender", type: "address"},
+                    {name: "value", type: "uint256"},
+                    {name: "nonce", type: "uint256"},
+                    {name: "deadline", type: "uint256"}
+                ]
             },
             primaryType: "Permit",
             domain: {
@@ -254,6 +227,13 @@ async function sendPermit(req,signature,payerAddr){
 
 
 
+async function sleepForSeconds(amount) {
+    console.log(`Sleeping for ${amount} seconds...`);
+    await new Promise(r => setTimeout(r, amount * 1000)); // milliseconds
+    console.log(`${amount} seconds have passed!`);
+}
+
+
 
 ////// main functions /////////
 
@@ -303,10 +283,10 @@ async function sendPermit(req,signature,payerAddr){
     console.log("signRequest: ",signRequest);
 
     // ******* initiate FIREBLOCKS create transaction *********
-    /////signature = await signEIP712Message(fb_vaultId, signRequest);
+    signature = await signEIP712Message(fb_vaultId, signRequest);
     // ******* close FIREBLOCKS *******************************
 
-    /////console.log("signature: ",signature);
+    console.log("signature: ",signature);
 
 
     ///////////////////////////////////////////////////////////////////////////////////
@@ -328,8 +308,10 @@ async function sendPermit(req,signature,payerAddr){
     console.log("-------- SEND PERMIT from RELAYER -------");
     
     // ******* initiate FIREBLOCKS send transaction *********
-    /////await sendPermit(req,signature,relayerAddr);
+    await sendPermit(req,signature,relayerAddr);
     // ******* close FIREBLOCKS *****************************
+
+    await sleepForSeconds(60);
 
     allowance = await token_withRelayer.methods.allowance(req.owner,req.spender).call();
     console.log(`allowance from owner to forwarder is ${allowance} ${req.symbol}`);
