@@ -265,6 +265,8 @@ async function sleepForSeconds(amount) {
     const now = new Date();
     now.setDate(now.getDate() + 3);
     const deadline = Math.floor(now.getTime() / 1000);
+    const amount = 2;
+    const weiAmount = await web3.utils.toWei(amount.toString(),"ether");
 
     const req = {
         name: await token.methods.name().call(),
@@ -273,7 +275,7 @@ async function sleepForSeconds(amount) {
         verifyingContract: TOKEN_CA,
         owner: signerAddr,
         spender: FORWARDER_CA,
-        value: 2,
+        value: weiAmount,
         deadline: deadline,
         nonce: await token.methods.nonces(signerAddr).call(),
         symbol: await token.methods.symbol().call(),

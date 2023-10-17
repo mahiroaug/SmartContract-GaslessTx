@@ -2,9 +2,11 @@
   "dependencies": {
     "@fireblocks/fireblocks-web3-provider": "^1.2.4",
     "@openzeppelin/contracts": "^5.0.0",
+    "chai": "^4.3.10",
     "dotenv": "^16.3.1",
     "fireblocks-sdk": "^5.8.0",
     "hardhat": "^2.18.0",
+    "mocha": "^10.2.0",
     "web3": "^1.10.2"
   },
   "devDependencies": {
