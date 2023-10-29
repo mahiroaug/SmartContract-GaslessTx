@@ -1,15 +1,10 @@
 const hre = require("hardhat");
 
 async function main() {
-
-    const TrustedForwarder = await hre.ethers.getContractFactory("MahiroTrustedForwarder");
-    const trustedForwarder = await TrustedForwarder.deploy();
-
-    //await trustedForwarder.deployed();
-    await trustedForwarder.waitForDeployment(); 
-
-    //console.log("TrustedForwarder deployed to:", trustedForwarder.address);
-    console.log("TrustedForwarder deployed to:", trustedForwarder.target);
+    const Forwarder = await hre.ethers.getContractFactory("Forwarder");
+    const forwarder = await Forwarder.deploy();
+    await forwarder.waitForDeployment(); 
+    console.log("Forwarder deployed to:", forwarder.target);
 }
 
 

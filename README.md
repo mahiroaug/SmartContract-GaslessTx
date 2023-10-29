@@ -67,5 +67,8 @@ get contract address and put in the .env(★★★★)
 # 2. test script
 
 ```bash
-node testScript/01_metatx.js
+node testScript/01_permit.js
+
+node testScript/03_sinleshot.js
 ```
+
