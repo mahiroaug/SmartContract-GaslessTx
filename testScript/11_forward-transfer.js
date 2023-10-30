@@ -6,14 +6,23 @@ const Web3 = require("web3");
 const { inspect } = require('util');
 const { FireblocksSDK, PeerType, TransactionOperation, TransactionStatus } = require("fireblocks-sdk");
 const { FireblocksWeb3Provider, ChainId } = require("@fireblocks/fireblocks-web3-provider");
+const { sign } = require('crypto');
 
+// -------------------COMMON----------------------- //
 //// common environment
-const TOKEN_CA = process.env.ERC20PERMIT_CA;
-const TOKEN_ABI = require('../artifacts/contracts/MahiroCoin_ERC20Permit.sol/MahiroCoinPermit.json').abi;
+const TOKEN_CA = process.env.ERC20SS_CA;
+const TOKEN_ABI = require('../artifacts/contracts/MahiroCoin_ERC20SingleShot.sol/MahiroCoinSingleShot.json').abi;
 const FORWARDER_CA = process.env.FORWARDER_CA;
-const FORWARDER_ABI = require('../artifacts/contracts/MahiroCoin_ERC2771Forwarder.sol/MahiroTrustedForwarder.json').abi;
+const FORWARDER_ABI = require('../artifacts/contracts/MahiroCoin_Forwarder.sol/Forwarder.json').abi;
 const NETWORK = process.env.NETWORK;
 
+
+const EIP712_DOMAIN_TYPE = "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
+const GENERIC_PARAMS = "address from,address to,uint256 value,uint256 gas,uint256 nonce,bytes data,uint256 validUntilTime";
+const REQUEST_TYPE = "ForwardRequest(" + GENERIC_PARAMS + ")";
+
+
+// -------------------FIREBLOCKS------------------- //
 //// fireblocks - SDK
 const fb_apiSecret = fs.readFileSync(path.resolve("fireblocks_secret_SIGNER.key"), "utf8");
 const fb_apiKey = process.env.FIREBLOCKS_API_KEY_SIGNER;
@@ -44,13 +53,13 @@ const web3_withRelayer = new Web3(eip1193Provider_withRelayer);
 const token_withRelayer = new web3_withRelayer.eth.Contract(TOKEN_ABI, TOKEN_CA);
 const forwarder_withRelayer = new web3_withRelayer.eth.Contract(FORWARDER_ABI,FORWARDER_CA);
 
-
-
+//// fireblocks - other setting
+const fb_vaultId_target = process.env.FIREBLOCKS_VAULT_ACCOUNT_ID_TARGET;
 
 
 /////////////////////////////////////////
-
-////// sign functions /////////
+////// sign functions ///////////////////
+/////////////////////////////////////////
 
 async function signEIP712Message(vaultAccountId, signRequest) {     
     const { status, id } = await fireblocks.createTransaction({
@@ -94,21 +103,27 @@ async function signEIP712Message(vaultAccountId, signRequest) {
 
     const signature = txInfo.signedMessages[0].signature;
     const v = 27 + signature.v;
-    console.log("Signature: ", "0x" + signature.r + signature.s + v.toString(16));
-    console.log("Signature.r:", signature.r);
-    console.log("Signature.s:", signature.s);
+    console.log("Signature(original): ",signature);
     console.log("Signature.v(+27):", v.toString(16));
-    console.log("Signature.v:", signature.v);
+
+
+    const vHex = web3.utils.toHex(v).slice(2);
+    const sigHex = '0x' + signature.fullSig + vHex
+    console.log("sigHex: ",sigHex);
+    const sigByte = web3.utils.hexToBytes(sigHex);
+    console.log("sigByte: ",sigByte);
 
     return {
         v: v,
         r: '0x' + signature.r,
-        s: '0x' + signature.s
+        s: '0x' + signature.s,
+        sigHex: sigHex,
+        sigByte: sigByte
     };
 
 }
 
-async function createRequestForPermit(req){
+async function createRequest(req){
 
     return SignRequest = {
         type: "EIP712",
@@ -121,15 +136,17 @@ async function createRequestForPermit(req){
                     {name: "chainId", type: "uint256"},
                     {name: "verifyingContract", type: "address"}
                 ],
-                Permit: [
-                    {name: "owner", type: "address"},
-                    {name: "spender", type: "address"},
+                ForwardRequest: [
+                    {name: "from", type: "address"},
+                    {name: "to", type: "address"},
                     {name: "value", type: "uint256"},
+                    {name: "gas", type: "uint256"},
                     {name: "nonce", type: "uint256"},
-                    {name: "deadline", type: "uint256"}
+                    {name: "data", type: "bytes"},
+                    {name: "validUntilTime", type: "uint256"}
                 ]
             },
-            primaryType: "Permit",
+            primaryType: "ForwardRequest",
             domain: {
                 name: req.name,
                 version: req.version,
@@ -137,20 +154,22 @@ async function createRequestForPermit(req){
                 verifyingContract: req.verifyingContract
             },
             message: {
-                owner: req.owner,
-                spender: req.spender,
+                from: req.from,
+                to: req.to,
                 value: req.value,
+                gas: req.gas,
                 nonce: req.nonce,
-                deadline: req.deadline
+                data: req.data,
+                validUntilTime: req.validUntilTime
             }
         }
     };
 }
 
 
-
-
-////// call functions /////////
+/////////////////////////////////////////
+////// call functions ///////////////////
+/////////////////////////////////////////
 
 async function getAccountBalance(address) {
     console.log(`Account: ${address}`);
@@ -169,8 +188,9 @@ async function getAccountBalance(address) {
 
 
 
-
-////// send functions /////////
+/////////////////////////////////////////
+////// send functions ///////////////////
+/////////////////////////////////////////
 
 const sendTx = async (_to ,_tx ,_signer,_gasLimit) => {
 
@@ -206,18 +226,44 @@ const sendTx = async (_to ,_tx ,_signer,_gasLimit) => {
     return(createReceipt);
 }
 
-async function sendPermit(req,signature,payerAddr){
+
+async function calcDomainSeparator(req){
+    const domainTypeHash = web3.utils.keccak256(EIP712_DOMAIN_TYPE);
+    const nameHash = web3.utils.keccak256(req.name);
+    const versionHash = web3.utils.keccak256(req.version);
+    const domainValue = web3.eth.abi.encodeParameters(
+        ["bytes32", "bytes32", "bytes32", "uint256", "address"],
+        [domainTypeHash, nameHash, versionHash, req.chainId, req.verifyingContract]
+    );
+    return web3.utils.keccak256(domainValue);
+}
+
+async function sendTransferByForwarder(req,signature,payerAddr){
+    const requestTypeHash= web3.utils.keccak256(REQUEST_TYPE);
+    const domainSeperator = calcDomainSeparator(req);
+
+    const emptyHex = "0x";
+    const emptyBytes = web3.utils.hexToBytes(emptyHex);
     try{
-        const tx = await token_withRelayer.methods.permit(
-            req.owner,
-            req.spender,
-            req.value,
-            req.deadline,
-            signature.v,
-            signature.r,
-            signature.s
+        const ForwardRequest = {
+            from: req.from,
+            to: req.to,
+            value: req.value,
+            gas: req.gas,
+            nonce: req.nonce,
+            data: req.data,
+            validUntilTime: req.validUntilTime
+        }
+
+        const tx = await forwarder_withRelayer.methods.execute(
+            ForwardRequest,
+            domainSeperator,
+            requestTypeHash,
+            emptyBytes,
+            signature.sigByte
         );
-        const receipt = await sendTx(TOKEN_CA,tx,payerAddr,150000);
+
+        const receipt = await sendTx(FORWARDER_CA,tx,payerAddr,400000);
         console.log("send permit");
         
     } catch(error){
@@ -234,8 +280,10 @@ async function sleepForSeconds(amount) {
 }
 
 
+/////////////////////////////////////////
+////// main functions ///////////////////
+/////////////////////////////////////////
 
-////// main functions /////////
 
 (async() => {
 
@@ -248,40 +296,82 @@ async function sleepForSeconds(amount) {
     // STEP1 signer create signature
     ///////////////////////////////////////////////////////////////////////////////////
 
-    // get Fireblocks vault accounts
+    // -------------------FIREBLOCKS VAULT ACCOUNT------------------- //
+    console.log("////////////////////////////");
+    console.log("/////////// STEP1 //////////");
+    console.log("////////////////////////////");
+    console.log("========== SGINER ==========");
     const vaultAddr = await web3.eth.getAccounts();
     const signerAddr = vaultAddr[0];
     console.log('signer address: ',signerAddr);
     const tc = await web3.eth.getTransactionCount(signerAddr);
     console.log('transactionCount: ',tc);
-
-    // get balance
     console.log("-------- GET VALUE ---------");
     await getAccountBalance(signerAddr);
 
+    console.log("========== TARGET ==========");
+    const walletAddresses = await fireblocks.getDepositAddresses(fb_vaultId_target, "ETH_TEST3");
+    const targetAddr = walletAddresses[0].address;
+    console.log("target address: ", targetAddr);
+        console.log("-------- GET VALUE ---------");
+    await getAccountBalance(targetAddr);
+
+    console.log("========== RELAYER ==========");
+    const vaultAddr2 = await web3_withRelayer.eth.getAccounts();
+    const relayerAddr = vaultAddr2[0];
+    console.log(`relayer address is ${relayerAddr}`);
+    const tc2 = await web3_withRelayer.eth.getTransactionCount(relayerAddr);
+    console.log('transactionCount: ',tc2);
+    console.log("-------- GET VALUE ---------");
+    await getAccountBalance(relayerAddr);
+
+
+
+
+    // -------------------SIGNATURE------------------- //
     // get SIGNATURE
-    console.log("-------- GET SIGNATURE -------");
+    console.log("========== GET SIGNATURE ==========");
     const coinName = await token.methods.name().call();
+
+    //deadline
     const now = new Date();
     now.setDate(now.getDate() + 3);
     const deadline = Math.floor(now.getTime() / 1000);
-    const amount = 2;
+
+    //send eth
+    const value = 0;
+    const weiValue = await web3.utils.toWei(value.toString(),"ether");
+
+    //data payload
+    const amount = 0;
     const weiAmount = await web3.utils.toWei(amount.toString(),"ether");
+    const fnSignatureTransfer = web3.utils.keccak256('transfer(address,uint256)').substr(0, 10);
+    const fnParamsTransfer = web3.eth.abi.encodeParameters(
+        ['address',  'uint256'],
+        [targetAddr,  weiAmount]
+    );
+    const data = fnSignatureTransfer + fnParamsTransfer.substr(2);
+
+    const _tx = token.methods.transfer(targetAddr,weiAmount).encodeABI();
 
     const req = {
+        symbol: await token.methods.symbol().call(),
+
         name: await token.methods.name().call(),
         version: "1",
         chainId: ChainId.GOERLI,
-        verifyingContract: TOKEN_CA,
-        owner: signerAddr,
-        spender: FORWARDER_CA,
-        value: weiAmount,
-        deadline: deadline,
+        verifyingContract: FORWARDER_CA,
+
+        from: signerAddr,
+        to: TOKEN_CA,
+        value: weiValue,
+        gas: 400000,
         nonce: await token.methods.nonces(signerAddr).call(),
-        symbol: await token.methods.symbol().call(),
+        data: _tx,
+        validUntilTime: deadline
     }
 
-    const signRequest = await createRequestForPermit(req);
+    const signRequest = await createRequest(req);
     console.log("signRequest: ",signRequest);
 
     // ******* initiate FIREBLOCKS create transaction *********
@@ -295,29 +385,25 @@ async function sleepForSeconds(amount) {
     // STEP2 relayer send transaction (PERMIT function)
     ///////////////////////////////////////////////////////////////////////////////////
 
-    console.log("-------- RELAYER parameter-------");
-    const vaultAddr2 = await web3_withRelayer.eth.getAccounts();
-    const relayerAddr = vaultAddr2[0];
-    console.log(`relayer address is ${relayerAddr}`);
+    console.log("////////////////////////////");
+    console.log("/////////// STEP2 //////////");
+    console.log("////////////////////////////");
 
-    const tc2 = await web3_withRelayer.eth.getTransactionCount(relayerAddr);
-    console.log('transactionCount: ',tc2);
-
-    await getAccountBalance(relayerAddr);
 
 
     // send meta transaction by relayer
-    console.log("-------- SEND PERMIT from RELAYER -------");
+    console.log("-------- SEND SINGLESHOT from RELAYER -------");
     
     // ******* initiate FIREBLOCKS send transaction *********
-    await sendPermit(req,signature,relayerAddr);
+    await sendTransferByForwarder(req,signature,relayerAddr);
     // ******* close FIREBLOCKS *****************************
 
     await sleepForSeconds(60);
 
-    allowance = await token_withRelayer.methods.allowance(req.owner,req.spender).call();
-    console.log(`allowance from owner to forwarder is ${allowance} ${req.symbol}`);
-
+    console.log("-------- GET VALUE(SIGNER) ---------");
+    await getAccountBalance(signerAddr);
+    console.log("-------- GET VALUE(TARGET) ---------");
+    await getAccountBalance(targetAddr);
 
 
 })().catch(error => {

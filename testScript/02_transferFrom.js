@@ -300,11 +300,13 @@ async function sleepForSeconds(amount) {
     const now = new Date();
     now.setDate(now.getDate() + 3);
     const deadline = Math.floor(now.getTime() / 1000);
+    const amount = 2; // 2 tokens
+    const weiAmount = await web3.utils.toWei(amount.toString(),"ether");
 
     let fnSignatureTransfer = web3.utils.keccak256('transferFrom(address,address,uint256)').substr(0, 10);
     let fnParamsTransfer = web3.eth.abi.encodeParameters(
         ['address', 'address', 'uint256'],
-        [signerAddr, targetAddr, 2]  // 2 tokens
+        [signerAddr, targetAddr, weiAmount]
     );
     const data = fnSignatureTransfer + fnParamsTransfer.substr(2);
 
