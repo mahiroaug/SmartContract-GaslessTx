@@ -13,7 +13,7 @@ const { sign } = require('crypto');
 const TOKEN_CA = process.env.ERC20SS_CA;
 const TOKEN_ABI = require('../artifacts/contracts/MahiroCoin_ERC20SingleShot.sol/MahiroCoinSingleShot.json').abi;
 const FORWARDER_CA = process.env.FORWARDER_CA;
-const FORWARDER_ABI = require('../artifacts/contracts/MahiroCoin_Forwarder.sol/Forwarder.json').abi;
+const FORWARDER_ABI = require('../artifacts/contracts/MahiroCoin_IForwarder.sol/IForwarder.json').abi;
 const NETWORK = process.env.NETWORK;
 
 
@@ -240,10 +240,13 @@ async function calcDomainSeparator(req){
 
 async function sendTransferByForwarder(req,signature,payerAddr){
     const requestTypeHash= web3.utils.keccak256(REQUEST_TYPE);
-    const domainSeperator = calcDomainSeparator(req);
+    const domainSeparator = await calcDomainSeparator(req);
 
-    const emptyHex = "0x";
-    const emptyBytes = web3.utils.hexToBytes(emptyHex);
+    const suffixData = "0x";
+    //const suffixData = web3.utils.hexToBytes(emptyHex);
+
+    const signatureHex = signature.sigHex;
+
     try{
         const ForwardRequest = {
             from: req.from,
@@ -257,11 +260,36 @@ async function sendTransferByForwarder(req,signature,payerAddr){
 
         const tx = await forwarder_withRelayer.methods.execute(
             ForwardRequest,
-            domainSeperator,
+            domainSeparator,
             requestTypeHash,
-            emptyBytes,
-            signature.sigByte
+            suffixData,
+            signatureHex
         );
+
+
+
+        console.log('ForwardRequest:', ForwardRequest);
+        console.log('DomainSeparator:', domainSeparator);
+        console.log('RequestTypeHash:', requestTypeHash);
+        console.log('SuffixData:', suffixData);
+        console.log('Signature:', signatureHex);
+
+        // パラメータの型もチェック
+        console.log('Types:', {
+            forwardRequest: typeof ForwardRequest,
+            domainSeparator: typeof domainSeparator,
+            requestTypeHash: typeof requestTypeHash,
+            suffixData: typeof suffixData,
+            signature: typeof signatureHex,
+        });
+
+        try {
+            const encodeABI = tx.encodeABI();
+            console.log('encodeABI: ', encodeABI);
+        } catch (error) {
+            console.error('encodeABI error:', error);
+            process.exit(1);
+        }
 
         const receipt = await sendTx(FORWARDER_CA,tx,payerAddr,400000);
         console.log("send permit");
@@ -271,6 +299,18 @@ async function sendTransferByForwarder(req,signature,payerAddr){
     }
 }
 
+
+async function registerDomainSeparator(name,version,payerAddr){
+    try {
+        console.log("registerDmainSeparator")
+        const tx = forwarder_withRelayer.methods.registerDomainSeparator(name,version);
+        const receipt = await sendTx(FORWARDER_CA,tx,payerAddr,400000);
+        console.log("registerDmainSeparator done!")
+    } catch(error){
+        console.error('Error: ',error);
+    }
+
+}
 
 
 async function sleepForSeconds(amount) {
@@ -339,25 +379,32 @@ async function sleepForSeconds(amount) {
     const deadline = Math.floor(now.getTime() / 1000);
 
     //send eth
-    const value = 0;
+    const value = 0.0001;
     const weiValue = await web3.utils.toWei(value.toString(),"ether");
 
+    
+    //nonce
+    const nonceStr = await token.methods.nonces(signerAddr).call();
+    const nonce = Number(nonceStr);
+
     //data payload
-    const amount = 0;
+    const amount = 9;
     const weiAmount = await web3.utils.toWei(amount.toString(),"ether");
+
+    /*
     const fnSignatureTransfer = web3.utils.keccak256('transfer(address,uint256)').substr(0, 10);
     const fnParamsTransfer = web3.eth.abi.encodeParameters(
         ['address',  'uint256'],
         [targetAddr,  weiAmount]
     );
     const data = fnSignatureTransfer + fnParamsTransfer.substr(2);
-
-    const _tx = token.methods.transfer(targetAddr,weiAmount).encodeABI();
+    */
+    const data = token.methods.transfer(targetAddr,weiAmount).encodeABI();
 
     const req = {
         symbol: await token.methods.symbol().call(),
 
-        name: await token.methods.name().call(),
+        name: "test01",
         version: "1",
         chainId: ChainId.GOERLI,
         verifyingContract: FORWARDER_CA,
@@ -366,10 +413,18 @@ async function sleepForSeconds(amount) {
         to: TOKEN_CA,
         value: weiValue,
         gas: 400000,
-        nonce: await token.methods.nonces(signerAddr).call(),
-        data: _tx,
-        validUntilTime: deadline
+        nonce: nonce,
+        data: data,
+        validUntilTime: deadline,
+        suffixData: '0x'
     }
+
+    // constructor
+    if(false){
+        await registerDomainSeparator(req.name,req.version,relayerAddr);
+        process.exit(1)
+    }
+
 
     const signRequest = await createRequest(req);
     console.log("signRequest: ",signRequest);
