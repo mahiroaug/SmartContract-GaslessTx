@@ -27,7 +27,7 @@ FORWARDER_CA=0x   # ★★★★
 
 ```bash
 npx hardhat compile
-npx hardhat run --network goerli scripts/deploy_MahiroCoin_F.js
+npx hardhat run --network holesky scripts/deploy_MahiroCoin_F.js
 ```
 
 get contract address and put in the follow(★★★★)
