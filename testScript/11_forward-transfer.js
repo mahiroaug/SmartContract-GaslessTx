@@ -15,11 +15,13 @@ const TOKEN_ABI = require('../artifacts/contracts/MahiroCoin_ERC20SingleShot.sol
 const FORWARDER_CA = process.env.FORWARDER_CA;
 const FORWARDER_ABI = require('../artifacts/contracts/MahiroCoin_IForwarder.sol/IForwarder.json').abi;
 const NETWORK = process.env.NETWORK;
-
+const ASSETID = process.env.FIREBLOCKS_ASSET_ID;
 
 const EIP712_DOMAIN_TYPE = "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
 const GENERIC_PARAMS = "address from,address to,uint256 value,uint256 gas,uint256 nonce,bytes data,uint256 validUntilTime";
 const REQUEST_TYPE = "ForwardRequest(" + GENERIC_PARAMS + ")";
+const DOMAIN_SEPARATOR_PARAM_NAME = process.env.DOMAIN_SEPARATOR_PARAM_NAME;
+const DOMAIN_SEPARATOR_PARAM_VERSION = process.env.DOMAIN_SEPARATOR_PARAM_VERSION;
 
 
 // -------------------FIREBLOCKS------------------- //
@@ -35,7 +37,7 @@ const eip1193Provider = new FireblocksWeb3Provider({
     privateKey: fb_apiSecret,
     apiKey: fb_apiKey,
     vaultAccountIds: fb_vaultId,
-    chainId: ChainId.GOERLI,
+    chainId: ChainId.HOLESKY,
 });
 const web3 = new Web3(eip1193Provider);
 const token = new web3.eth.Contract(TOKEN_ABI, TOKEN_CA);
@@ -47,7 +49,7 @@ const eip1193Provider_withRelayer = new FireblocksWeb3Provider({
     privateKey: fb_apiSecret,
     apiKey: fb_apiKey,
     vaultAccountIds: fb_vaultId_relayer,
-    chainId: ChainId.GOERLI,
+    chainId: ChainId.HOLESKY,
 });
 const web3_withRelayer = new Web3(eip1193Provider_withRelayer);
 const token_withRelayer = new web3_withRelayer.eth.Contract(TOKEN_ABI, TOKEN_CA);
@@ -64,7 +66,7 @@ const fb_vaultId_target = process.env.FIREBLOCKS_VAULT_ACCOUNT_ID_TARGET;
 async function signEIP712Message(vaultAccountId, signRequest) {     
     const { status, id } = await fireblocks.createTransaction({
         operation: TransactionOperation.TYPED_MESSAGE,
-        assetId: "ETH_TEST3",
+        assetId: ASSETID,
         source: { 
             type: PeerType.VAULT_ACCOUNT,
             id: vaultAccountId
@@ -96,7 +98,7 @@ async function signEIP712Message(vaultAccountId, signRequest) {
     console.log("txinfo: ", txInfo);
 
     console.log(">>> result");
-    const walletAddresses = await fireblocks.getDepositAddresses(vaultAccountId, "ETH_TEST3");
+    const walletAddresses = await fireblocks.getDepositAddresses(vaultAccountId, ASSETID);
     console.log("walletAddresses: ", walletAddresses);
     console.log("Address: ", walletAddresses[0].address);
     console.log("signRequest: ", signRequest);
@@ -241,10 +243,6 @@ async function calcDomainSeparator(req){
 async function sendTransferByForwarder(req,signature,payerAddr){
     const requestTypeHash= web3.utils.keccak256(REQUEST_TYPE);
     const domainSeparator = await calcDomainSeparator(req);
-
-    const suffixData = "0x";
-    //const suffixData = web3.utils.hexToBytes(emptyHex);
-
     const signatureHex = signature.sigHex;
 
     try{
@@ -262,7 +260,7 @@ async function sendTransferByForwarder(req,signature,payerAddr){
             ForwardRequest,
             domainSeparator,
             requestTypeHash,
-            suffixData,
+            req.suffixData,
             signatureHex
         );
 
@@ -271,7 +269,7 @@ async function sendTransferByForwarder(req,signature,payerAddr){
         console.log('ForwardRequest:', ForwardRequest);
         console.log('DomainSeparator:', domainSeparator);
         console.log('RequestTypeHash:', requestTypeHash);
-        console.log('SuffixData:', suffixData);
+        console.log('SuffixData:', req.suffixData);
         console.log('Signature:', signatureHex);
 
         // パラメータの型もチェック
@@ -279,7 +277,7 @@ async function sendTransferByForwarder(req,signature,payerAddr){
             forwardRequest: typeof ForwardRequest,
             domainSeparator: typeof domainSeparator,
             requestTypeHash: typeof requestTypeHash,
-            suffixData: typeof suffixData,
+            suffixData: typeof req.suffixData,
             signature: typeof signatureHex,
         });
 
@@ -350,9 +348,9 @@ async function sleepForSeconds(amount) {
     await getAccountBalance(signerAddr);
 
     console.log("========== TARGET ==========");
-    const walletAddresses = await fireblocks.getDepositAddresses(fb_vaultId_target, "ETH_TEST3");
+    const walletAddresses = await fireblocks.getDepositAddresses(fb_vaultId_target, ASSETID);
     const targetAddr = walletAddresses[0].address;
-    console.log("target address: ", targetAddr);
+    //console.log("target address: ", targetAddr);
         console.log("-------- GET VALUE ---------");
     await getAccountBalance(targetAddr);
 
@@ -378,11 +376,12 @@ async function sleepForSeconds(amount) {
     now.setDate(now.getDate() + 3);
     const deadline = Math.floor(now.getTime() / 1000);
 
+    /*
     //send eth
     const value = 0.0001;
     const weiValue = await web3.utils.toWei(value.toString(),"ether");
+    */
 
-    
     //nonce
     const nonceStr = await token.methods.nonces(signerAddr).call();
     const nonce = Number(nonceStr);
@@ -390,33 +389,23 @@ async function sleepForSeconds(amount) {
     //data payload
     const amount = 9;
     const weiAmount = await web3.utils.toWei(amount.toString(),"ether");
-
-    /*
-    const fnSignatureTransfer = web3.utils.keccak256('transfer(address,uint256)').substr(0, 10);
-    const fnParamsTransfer = web3.eth.abi.encodeParameters(
-        ['address',  'uint256'],
-        [targetAddr,  weiAmount]
-    );
-    const data = fnSignatureTransfer + fnParamsTransfer.substr(2);
-    */
     const data = token.methods.transfer(targetAddr,weiAmount).encodeABI();
 
     const req = {
-        symbol: await token.methods.symbol().call(),
-
-        name: "test01",
-        version: "1",
-        chainId: ChainId.GOERLI,
+        name: DOMAIN_SEPARATOR_PARAM_NAME,
+        version: DOMAIN_SEPARATOR_PARAM_VERSION,
+        chainId: ChainId.HOLESKY,
         verifyingContract: FORWARDER_CA,
 
         from: signerAddr,
         to: TOKEN_CA,
-        value: weiValue,
+        value: 0,
         gas: 400000,
         nonce: nonce,
         data: data,
         validUntilTime: deadline,
-        suffixData: '0x'
+        //suffixData: '0x'
+        suffixData: web3.utils.hexToBytes('0x')
     }
 
     // constructor
