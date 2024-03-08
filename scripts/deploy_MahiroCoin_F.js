@@ -8,7 +8,7 @@ async function main() {
 
   // regist DomainSeparator
   const domainName = "MyForwarderDomain";
-  const domainVersion = "1.0";
+  const domainVersion = "1";
   const tx = await forwarder.registerDomainSeparator(domainName, domainVersion);
   await tx.wait();
   console.log("DomainSeparator registered");

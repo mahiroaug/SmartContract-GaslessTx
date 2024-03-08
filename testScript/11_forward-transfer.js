@@ -230,18 +230,21 @@ const sendTx = async (_to ,_tx ,_signer,_gasLimit) => {
 
 
 async function calcDomainSeparator(req){
-    const domainTypeHash = web3.utils.keccak256(EIP712_DOMAIN_TYPE);
-    const nameHash = web3.utils.keccak256(req.name);
-    const versionHash = web3.utils.keccak256(req.version);
     const domainValue = web3.eth.abi.encodeParameters(
-        ["bytes32", "bytes32", "bytes32", "uint256", "address"],
-        [domainTypeHash, nameHash, versionHash, req.chainId, req.verifyingContract]
+        ['bytes32', 'bytes32', 'bytes32', 'uint256', 'address'],
+        [
+            web3.utils.keccak256(EIP712_DOMAIN_TYPE),
+            web3.utils.keccak256(req.name),
+            web3.utils.keccak256(req.version),
+            req.chainId,
+            req.verifyingContract,
+        ]
     );
-    return web3.utils.keccak256(domainValue);
+    return web3.utils.soliditySha3(domainValue);
 }
 
 async function sendTransferByForwarder(req,signature,payerAddr){
-    const requestTypeHash= web3.utils.keccak256(REQUEST_TYPE);
+    const requestTypeHash= web3.utils.soliditySha3(REQUEST_TYPE);
     const domainSeparator = await calcDomainSeparator(req);
     const signatureHex = signature.sigHex;
 
@@ -289,7 +292,7 @@ async function sendTransferByForwarder(req,signature,payerAddr){
             process.exit(1);
         }
 
-        const receipt = await sendTx(FORWARDER_CA,tx,payerAddr,400000);
+        const receipt = await sendTx(FORWARDER_CA,tx,payerAddr,2000000);
         console.log("send permit");
         
     } catch(error){
@@ -302,7 +305,7 @@ async function registerDomainSeparator(name,version,payerAddr){
     try {
         console.log("registerDmainSeparator")
         const tx = forwarder_withRelayer.methods.registerDomainSeparator(name,version);
-        const receipt = await sendTx(FORWARDER_CA,tx,payerAddr,400000);
+        const receipt = await sendTx(FORWARDER_CA,tx,payerAddr,2000000);
         console.log("registerDmainSeparator done!")
     } catch(error){
         console.error('Error: ',error);
@@ -400,12 +403,11 @@ async function sleepForSeconds(amount) {
         from: signerAddr,
         to: TOKEN_CA,
         value: 0,
-        gas: 400000,
+        gas: 1000000,
         nonce: nonce,
         data: data,
         validUntilTime: deadline,
-        //suffixData: '0x'
-        suffixData: web3.utils.hexToBytes('0x')
+        suffixData: '0x'
     }
 
     // constructor
