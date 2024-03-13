@@ -21,6 +21,15 @@ FIREBLOCKS_VAULT_ACCOUNT_ID_RELAYER=
 # SMART CONTRACT
 ERC20PERMIT_CA=0x # ★★★★
 FORWARDER_CA=0x   # ★★★★
+
+
+#DomainSeparator parameter
+DOMAIN_SEPARATOR_PARAM_NAME=MyForwarderDomain
+DOMAIN_SEPARATOR_PARAM_VERSION=1
+
+### --------- AWS -----------
+SQS01_URL=
+
 ```
 
 # 1. compile
